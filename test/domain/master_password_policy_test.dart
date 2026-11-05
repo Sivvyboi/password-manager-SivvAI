@@ -20,6 +20,19 @@ void main() {
       expect(MasterPasswordPolicy.isValidLength(pass15), isTrue);
     });
 
+    test('Counts length strictly by Unicode code points (runes), not UTF-16 code units', () {
+      // 14 emoji (surrogate pairs in UTF-16, 28 UTF-16 code units, but only 14 code points)
+      final fourteenCodePoints = '🔒' * 14;
+      expect(fourteenCodePoints.length, equals(28)); // 28 UTF-16 units
+      expect(fourteenCodePoints.runes.length, equals(14)); // 14 code points
+      expect(MasterPasswordPolicy.validateAndEncode(fourteenCodePoints).isErr, isTrue);
+
+      // 15 emoji code points
+      final fifteenCodePoints = '🔒' * 15;
+      expect(fifteenCodePoints.runes.length, equals(15));
+      expect(MasterPasswordPolicy.validateAndEncode(fifteenCodePoints).isOk, isTrue);
+    });
+
     test('Accepts long passphrases with arbitrary spaces without forced character classes', () {
       const passphrase = 'battery staple horse staple correct blue moon';
       final result = MasterPasswordPolicy.validateAndEncode(passphrase);
@@ -42,11 +55,10 @@ void main() {
       expect(result.unwrap, equals(utf8.encode(unicodePass)));
     });
 
-    test('Rejects passwords exceeding 256 characters to avoid KDF DoS', () {
+    test('Rejects passwords exceeding 256 code points to avoid KDF DoS', () {
       final excessivelyLong = 'A' * 257;
       final result = MasterPasswordPolicy.validateAndEncode(excessivelyLong);
       expect(result.isErr, isTrue);
     });
   });
 }
-

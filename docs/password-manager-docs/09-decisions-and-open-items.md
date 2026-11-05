@@ -33,20 +33,20 @@
 | ADR-027 | Local zxcvbn strength estimation | Approved |
 | ADR-028 | Security settings are local/device-specific | Approved |
 | ADR-029 | Android test devices: API 26 and API 34 plus emulator | Confirmed |
-| ADR-030 | Master password UTF-8 preservation; no silent trim or lowercasing | Proposed (Doc 10) |
-| ADR-031 | Canonical AAD binary encoding layout (`PMAA` header + big-endian fields) | Proposed (Doc 10) |
-| ADR-032 | Primary crypto library candidate: `cryptography` package; `bip39` for mnemonic | Candidate (Doc 10) |
-| ADR-033 | Per-record key derivation via HKDF-SHA256 to eliminate AES-GCM nonce reuse risks | Proposed (Doc 10) |
+| ADR-030 | Master password length counted strictly in Unicode code points (>= 15); raw UTF-8 preservation; no silent trim or lowercasing | Proposed (Doc 10) |
+| ADR-031 | Canonical AAD binary encoding layout (`PMAA` header + big-endian fields + uint32 range check) | Proposed (Doc 10) |
+| ADR-032 | Primary crypto library candidate: `cryptography` package (^2.9.0, Apache 2.0); `bip39` (^1.0.6) for mnemonic | Candidate (Doc 10) |
+| ADR-033 | Per-record key derivation via HKDF-SHA256 to bound AES-GCM nonce collision risks (max 2^16 writes per key) | Proposed (Doc 10) |
 | ADR-034 | BIP39 Seed (PBKDF2-HMAC-SHA512, c=2048, salt='mnemonic') + two-stage HKDF-SHA256 Extract-and-Expand recovery derivation bound to Vault ID | Proposed (Doc 10) |
 
 ## 2. Candidate technical choices — not yet frozen
 
 - SQLite implementation/package (Evaluation in Phase 2).
-- Argon2id library (`cryptography` recommended) and parameters ($m=64\text{ MiB}, t=3, p=4$ pending physical API 26 benchmark).
+- Argon2id library (`cryptography` ^2.9.0 recommended, Apache 2.0, isolate execution) and parameters ($m=64\text{ MiB}, t=3, p=4$ pending physical API 26 benchmark).
 - AES-256-GCM library (`cryptography` package candidate) and per-record key derivation design (Proposed in ADR-033).
-- Nonce generation: OS CSPRNG 96-bit random nonce combined with per-record key derivation (Proposed in Doc 10).
-- HKDF hierarchy and exact context strings (`PM-RECORD-KEY-V1`, `PM-RECOVERY-WRAP-V1`, etc. proposed in Doc 10).
-- Recovery mnemonic-to-key derivation (BIP39 seed + HKDF-SHA256 proposed in Doc 10).
+- Nonce generation: OS CSPRNG 96-bit random nonce with per-record key derivation (invocation limit $2^{16}$ writes per record key).
+- HKDF hierarchy and exact context strings (`PM-RECORD-KEY-V1:`, `PM-RECOVERY-WRAP-V1:`, `PM-BACKUP-KEY-V1:` proposed in Doc 10).
+- Recovery mnemonic-to-key derivation (BIP39 seed + HKDF-SHA256 Extract-and-Expand proposed in Doc 10).
 - Canonical serialization and associated-data byte encoding (Specified in Doc 10; unit tested).
 - zxcvbn package and wordlist licensing/maintenance (Evaluation in Phase 3).
 - Windows key wrapper implementation (Phase 5).

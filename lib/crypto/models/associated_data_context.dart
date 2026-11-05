@@ -13,7 +13,7 @@ import 'crypto_scheme.dart';
 /// Binary Format Specification (Version 1):
 /// - 4 bytes: Magic ASCII header `PMAA` (0x50, 0x4D, 0x41, 0x41)
 /// - 2 bytes: Format Version (uint16 big-endian)
-/// - 1 byte: Purpose Code (uint8)
+/// - 1 byte: Purpose Code (uint8, from [AeadPurpose])
 /// - 1 byte: Vault ID Length (uint8)
 /// - N bytes: Vault ID UTF-8 bytes
 /// - 1 byte: Record ID Length (uint8, 0 if null/vault-level)
@@ -22,72 +22,95 @@ import 'crypto_scheme.dart';
 @immutable
 class AssociatedDataContext {
   static const List<int> magicHeader = [0x50, 0x4D, 0x41, 0x41]; // 'PMAA'
+  static const int maxUint32 = 0xFFFFFFFF;
 
   final FormatVersion formatVersion;
-  final CryptoPurpose purpose;
+  final AeadPurpose purpose;
   final VaultId vaultId;
   final RecordId? recordId;
   final int recordVersion;
 
-  const AssociatedDataContext({
+  AssociatedDataContext({
     this.formatVersion = FormatVersion.current,
     required this.purpose,
     required this.vaultId,
     this.recordId,
     this.recordVersion = 0,
-  });
+  }) {
+    if (recordVersion < 0 || recordVersion > maxUint32) {
+      throw ArgumentError.value(
+        recordVersion,
+        'recordVersion',
+        'Record version must be a valid unsigned 32-bit integer (0 to $maxUint32).',
+      );
+    }
+  }
 
-  /// Canonical AAD for wrapping the VEK with the Master Password Wrapping Key.
+  /// Canonical AAD for wrapping the VEK with the Master Password Wrapping Key (0x01).
   factory AssociatedDataContext.forMasterKeyWrap({required VaultId vaultId}) {
     return AssociatedDataContext(
-      purpose: CryptoPurpose.masterKeyWrap,
+      purpose: AeadPurpose.masterKeyWrap,
       vaultId: vaultId,
       recordId: null,
       recordVersion: 0,
     );
   }
 
-  /// Canonical AAD for wrapping the VEK with the Recovery Wrapping Key.
+  /// Canonical AAD for wrapping the VEK with the Recovery Wrapping Key (0x02).
   factory AssociatedDataContext.forRecoveryKeyWrap({required VaultId vaultId}) {
     return AssociatedDataContext(
-      purpose: CryptoPurpose.recoveryKeyWrap,
+      purpose: AeadPurpose.recoveryKeyWrap,
       vaultId: vaultId,
       recordId: null,
       recordVersion: 0,
     );
   }
 
-  /// Canonical AAD for encrypting a specific record payload.
+  /// Canonical AAD for encrypting a specific record payload (0x04).
   factory AssociatedDataContext.forRecordPayload({
     required VaultId vaultId,
     required RecordId recordId,
     required int recordVersion,
   }) {
     return AssociatedDataContext(
-      purpose: CryptoPurpose.recordPayloadEncryption,
+      purpose: AeadPurpose.recordPayload,
       vaultId: vaultId,
       recordId: recordId,
       recordVersion: recordVersion,
     );
   }
 
-  /// Canonical AAD for encrypting an authenticated deletion tombstone.
+  /// Canonical AAD for encrypting an authenticated deletion tombstone (0x05).
   factory AssociatedDataContext.forTombstone({
     required VaultId vaultId,
     required RecordId recordId,
     required int recordVersion,
   }) {
     return AssociatedDataContext(
-      purpose: CryptoPurpose.tombstonePayloadEncryption,
+      purpose: AeadPurpose.tombstonePayload,
       vaultId: vaultId,
       recordId: recordId,
       recordVersion: recordVersion,
     );
   }
 
+  /// Canonical AAD for encrypting a portable backup package (0x06).
+  factory AssociatedDataContext.forBackupPackage({required VaultId vaultId}) {
+    return AssociatedDataContext(
+      purpose: AeadPurpose.backupPackage,
+      vaultId: vaultId,
+      recordId: null,
+      recordVersion: 0,
+    );
+  }
+
   /// Serializes the context into deterministic canonical bytes.
   /// Identical byte output is guaranteed across Android, Windows, and all Dart platforms.
   Uint8List toCanonicalBytes() {
+    if (recordVersion < 0 || recordVersion > maxUint32) {
+      throw RangeError.range(recordVersion, 0, maxUint32, 'recordVersion');
+    }
+
     final vaultIdBytes = utf8.encode(vaultId.value);
     final recordIdBytes = recordId != null ? utf8.encode(recordId!.value) : const <int>[];
 
@@ -113,7 +136,7 @@ class AssociatedDataContext {
     offset += 2;
 
     // 3. Purpose code
-    buffer.setUint8(offset++, purpose.purposeCode);
+    buffer.setUint8(offset++, purpose.code);
 
     // 4. Vault ID
     buffer.setUint8(offset++, vaultIdBytes.length);

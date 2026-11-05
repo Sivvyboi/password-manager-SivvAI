@@ -21,7 +21,7 @@ void main() {
       expect(bytes.sublist(4, 6), equals([0x00, 0x01]));
 
       // Purpose code for masterKeyWrap -> 0x01
-      expect(bytes[6], equals(CryptoPurpose.masterKeyWrap.purposeCode));
+      expect(bytes[6], equals(AeadPurpose.masterKeyWrap.code));
 
       // Vault ID length (36 bytes for UUID)
       expect(bytes[7], equals(36));
@@ -46,8 +46,8 @@ void main() {
       );
       final bytes = context.toCanonicalBytes();
 
-      // Purpose code for recordPayloadEncryption -> 0x04
-      expect(bytes[6], equals(CryptoPurpose.recordPayloadEncryption.purposeCode));
+      // Purpose code for recordPayload -> 0x04
+      expect(bytes[6], equals(AeadPurpose.recordPayload.code));
 
       // Record ID length is 36
       final recordIdLenIndex = 8 + 36;
@@ -59,6 +59,40 @@ void main() {
       // Record version 5 (uint32 big-endian) -> 0x00, 0x00, 0x00, 0x05
       final versionOffset = recordIdLenIndex + 1 + 36;
       expect(bytes.sublist(versionOffset, versionOffset + 4), equals([0x00, 0x00, 0x00, 0x05]));
+    });
+
+    test('Encodes canonical tombstone (0x05) and backup package (0x06) contexts', () {
+      final tombstoneCtx = AssociatedDataContext.forTombstone(
+        vaultId: vaultId,
+        recordId: recordId,
+        recordVersion: 10,
+      );
+      expect(tombstoneCtx.toCanonicalBytes()[6], equals(AeadPurpose.tombstonePayload.code));
+
+      final backupCtx = AssociatedDataContext.forBackupPackage(vaultId: vaultId);
+      expect(backupCtx.toCanonicalBytes()[6], equals(AeadPurpose.backupPackage.code));
+    });
+
+    test('Rejects record version exceeding uint32 range or negative values', () {
+      expect(
+        () => AssociatedDataContext(
+          purpose: AeadPurpose.recordPayload,
+          vaultId: vaultId,
+          recordId: recordId,
+          recordVersion: -1,
+        ),
+        throwsArgumentError,
+      );
+
+      expect(
+        () => AssociatedDataContext(
+          purpose: AeadPurpose.recordPayload,
+          vaultId: vaultId,
+          recordId: recordId,
+          recordVersion: 0x100000000, // 2^32
+        ),
+        throwsArgumentError,
+      );
     });
 
     test('Deterministic output: multiple serializations produce identical bytes', () {

@@ -28,28 +28,51 @@ enum AeadCipher {
   }
 }
 
-/// Cryptographic purpose domain separation labels.
-enum CryptoPurpose {
-  /// Wrapping of the primary Vault Encryption Key by the master password key.
-  masterKeyWrap(0x01, 'PM-VAULT-WRAP-V1'),
+/// Explicit 1-byte purpose codes for AEAD Associated Authenticated Data (AAD).
+///
+/// Embedded at byte offset 6 in the canonical binary AAD header.
+/// Strictly distinguishes the operational domain of each ciphertext.
+enum AeadPurpose {
+  /// 0x01: Wrapping of the primary Vault Encryption Key by the master password key.
+  masterKeyWrap(0x01),
 
-  /// Wrapping of the primary Vault Encryption Key by the recovery phrase key.
-  recoveryKeyWrap(0x02, 'PM-RECOVERY-WRAP-V1'),
+  /// 0x02: Wrapping of the primary Vault Encryption Key by the recovery phrase key.
+  recoveryKeyWrap(0x02),
 
-  /// Derivation of record encryption keys from the Vault Encryption Key.
-  recordKeyDerivation(0x03, 'PM-RECORD-KEY-V1'),
+  /// 0x04: Record payload encryption.
+  recordPayload(0x04),
 
-  /// Record payload encryption.
-  recordPayloadEncryption(0x04, 'PM-RECORD-PAYLOAD-V1'),
+  /// 0x05: Authenticated deletion tombstone payload.
+  tombstonePayload(0x05),
 
-  /// Encrypted deletion tombstone.
-  tombstonePayloadEncryption(0x05, 'PM-TOMBSTONE-PAYLOAD-V1'),
+  /// 0x06: Portable backup package encryption and authentication.
+  backupPackage(0x06);
 
-  /// Portable vault package authentication.
-  backupPackageWrap(0x06, 'PM-BACKUP-PACKAGE-V1');
+  final int code;
+  const AeadPurpose(this.code);
 
-  final int purposeCode;
-  final String domainString;
-  const CryptoPurpose(this.purposeCode, this.domainString);
+  static AeadPurpose fromCode(int code) {
+    for (final p in values) {
+      if (p.code == code) return p;
+    }
+    throw ArgumentError.value(code, 'code', 'Unsupported AEAD purpose code.');
+  }
 }
 
+/// Context labels used for RFC 5869 HKDF-Expand key derivation.
+///
+/// These strings provide domain separation for subkey derivation and are distinct
+/// from the 1-byte binary AEAD purpose codes.
+abstract final class HkdfContext {
+  /// HKDF info prefix for deriving a per-record encryption key from VEK.
+  /// Formatted as: 'PM-RECORD-KEY-V1:' + recordId
+  static const String recordKeyPrefix = 'PM-RECORD-KEY-V1:';
+
+  /// HKDF info prefix for deriving the recovery wrapping key from the BIP39 seed.
+  /// Formatted as: 'PM-RECOVERY-WRAP-V1:' + vaultId
+  static const String recoveryWrapPrefix = 'PM-RECOVERY-WRAP-V1:';
+
+  /// HKDF info prefix for deriving a backup package encryption key.
+  /// Formatted as: 'PM-BACKUP-KEY-V1:' + vaultId
+  static const String backupKeyPrefix = 'PM-BACKUP-KEY-V1:';
+}

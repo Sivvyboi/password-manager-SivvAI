@@ -1,9 +1,9 @@
 # 12 — Phase 1 Implementation Status
 
-**Document Status:** MILESTONE 1A REMEDIATION PASS REPORT  
+**Document Status:** MILESTONE 1A FINAL ALIGNMENT REPORT  
 **Timestamp:** 2026-11-05  
 **Current Phase:** Phase 1 — Domain and Cryptographic Foundations  
-**Milestone:** 1A — Cryptographic Design and Domain Foundation (Remediated)  
+**Milestone:** 1A — Cryptographic Design and Domain Foundation  
 
 ---
 
@@ -11,12 +11,17 @@
 
 Milestone 1A established the complete, immutable domain model, typed identifiers, domain policies, and formal cryptographic interfaces for the password manager without prematurely freezing unverified cryptographic choices or writing insecure placeholder implementations.
 
-During the owner review and remediation pass:
-1. **Argon2id KAT Corrected:** Replaced the previous vector with the exact official RFC 9106 Section 5.3 compliance test vector, verifying every byte ($P$, $S$, $K$, $X$, $H_0$, and output tag), while clearly separating it from the proposed production candidate profile.
-2. **BIP39 & HKDF Recovery Derivation Formalized:** Detailed the full BIP39 process (256-bit entropy, 8-bit checksum, NFKD normalization, 2048 PBKDF2 iterations, salt `"mnemonic"`, and confirmation of no optional passphrase). Formalized the two-stage HKDF Extract-and-Expand pipeline (HMAC-SHA256) with domain separation (`PM-RECOVERY-WRAP-V1:`) and vault-specific binding (`vaultId.value`).
-3. **Refined Cryptographic Interfaces:** Updated `HkdfService` to expose explicit `extract` and `expand` stages, and updated `RecoveryMnemonicService` to require `vaultId` binding.
-
-All domain contracts and policies have been verified with a 35-test unit test suite passing with zero warnings or analyzer lints.
+Following the owner's rigorous cryptographic design review, all outstanding findings have been resolved:
+1. **Argon2id KAT Corrected to RFC 9106 Section 5.3:** Replaced the previous vector with the exact official RFC 9106 Section 5.3 compliance test vector:
+   - $H_0$ (64 bytes) begins `28 89 de 48 7e b4 2a e5...`
+   - Output Tag (32 bytes) is `0d640df58d78766c08c037a34a8b53c9d01ef0452d75b65eb52520e96b01e659`.
+   - Explicitly distinguished this low-memory compliance check from the proposed production candidate profile ($m=64\text{ MiB}, t=3, p=4$).
+2. **Accurate Nonce Risk & Rollback Handling:** Replaced absolute claims with accurate probabilistic collision risk analysis ($P \approx q^2 / 2^{97}$), bounded per-record key invocation limits ($2^{16}$ writes), and defined rollback handling via monotonic AAD revision counters and HKDF context epoch refreshes.
+3. **Verified Library Evaluation:** Updated `cryptography` package evaluation to version `^2.9.0` with its verified **Apache 2.0** license, documenting that the core library runs Argon2id in pure Dart and therefore requires background Dart isolate execution.
+4. **Precise Password Length Counting:** Established that master password length is measured strictly in **Unicode scalar values / code points** (`password.runes.length`), eliminating ambiguity between graphemes and code points, backed by dedicated tests.
+5. **AAD Range Checks & Purpose Completeness:** Documented all AAD purpose codes (`0x01` MasterWrap, `0x02` RecoveryWrap, `0x04` RecordPayload, `0x05` TombstonePayload, `0x06` BackupPackage), and enforced strict $0 \le \text{recordVersion} \le 0xFFFFFFFF$ unsigned 32-bit integer range checks in code and tests.
+6. **Canonical UUID Validation:** Corrected class contracts to canonical UUID (RFC 4122) strings.
+7. **Consistent Memory Hygiene Claims:** Memory cleanup via `SecretKeyBytes.destroy()` is consistently documented and implemented as **best-effort zeroization**, noting managed runtime (Dart VM) limitations.
 
 ---
 
@@ -25,9 +30,9 @@ All domain contracts and policies have been verified with a 35-test unit test su
 ### 2.1 Core Subsystem (`lib/core/`)
 - `result.dart`: Strongly typed `Result<T, E>` monad enforcing explicit error handling.
 - `errors.dart`: Hierarchical domain failure models (`AuthenticationFailure`, `CryptoFailure`, `PolicyFailure`, `FormatFailure`).
-- `types/vault_id.dart`: Immutable, validated UUID v4 identifier for logical vaults.
-- `types/record_id.dart`: Immutable, validated UUID v4 identifier for credential records.
-- `types/format_version.dart`: Comparable, versioned vault format identifier.
+- `types/vault_id.dart`: Immutable, validated canonical UUID (RFC 4122) identifier for logical vaults.
+- `types/record_id.dart`: Immutable, validated canonical UUID (RFC 4122) identifier for credential records.
+- `types/format_version.dart`: Comparable, versioned vault format identifier with operator overloads.
 
 ### 2.2 Domain Subsystem (`lib/domain/`)
 - `models/record_type.dart`: Enumeration of the 5 supported record types (login, note, card, wifi, licence).
@@ -35,16 +40,16 @@ All domain contracts and policies have been verified with a 35-test unit test su
 - `models/credential_payload.dart`: In-memory entity for decrypted credentials. **Strictly excludes CVV/CVC on payment cards per FR-015/ADR-011.** Enforces secret redaction on `toString()`.
 - `models/tombstone.dart`: Deletion tombstone entity for sync/restore consistency per FR-017/ADR-022.
 - `models/vault_metadata.dart`: Logical vault envelope and creation timestamp model.
-- `policies/master_password_policy.dart`: Enforces $\ge 15$ character rule, supports long passphrases and spaces without arbitrary character-class rules, preserves raw UTF-8 input without silent trim or lowercasing.
+- `policies/master_password_policy.dart`: Enforces $\ge 15$ Unicode code points rule, supports long passphrases and spaces without arbitrary character-class rules, preserves raw UTF-8 input without silent trim or lowercasing.
 - `policies/password_generation_policy.dart`: Enforces $\ge 12$ character rule, character pool validation, and excluded-character filtering.
 - `policies/renewal_policy.dart`: Configurable renewal reminder interval logic per FR-028.
 
 ### 2.3 Cryptographic Foundation Models & Interfaces (`lib/crypto/`)
-- `models/crypto_scheme.dart`: Explicit enumeration of KDF algorithms, AEAD ciphers, and purpose codes.
+- `models/crypto_scheme.dart`: Enumeration of KDF algorithms, AEAD ciphers, 1-byte binary AAD purpose codes (`AeadPurpose`), and string HKDF context prefixes (`HkdfContext`).
 - `models/kdf_parameters.dart`: Immutable Argon2id parameters profile with strictly bounded resource limits ($8\text{ MiB} \le m \le 256\text{ MiB}$, $1 \le t \le 10$, $1 \le p \le 8$) to eliminate KDF DoS attacks.
-- `models/key_types.dart`: Strongly typed key abstractions (`MasterWrappingKey`, `RecoveryWrappingKey`, `VaultEncryptionKey`, `RecordEncryptionKey`) with memory zeroization (`destroy()`) and secret redaction.
+- `models/key_types.dart`: Strongly typed key abstractions (`MasterWrappingKey`, `RecoveryWrappingKey`, `VaultEncryptionKey`, `RecordEncryptionKey`) with best-effort memory zeroization (`destroy()`) and secret redaction.
 - `models/wrapped_key_payload.dart`: Validated AEAD wrapper container (nonce, ciphertext, tag).
-- `models/associated_data_context.dart`: Canonical, deterministic binary AAD encoder guaranteeing cross-platform byte-for-byte parity across Android and Windows.
+- `models/associated_data_context.dart`: Canonical, deterministic binary AAD encoder with explicit uint32 range validation, guaranteeing cross-platform byte-for-byte parity across Android and Windows.
 - `interfaces/secure_random_source.dart`: Contract for OS-backed CSPRNG with rejection sampling.
 - `interfaces/kdf_service.dart`: Asynchronous contract for off-thread Argon2id key derivation.
 - `interfaces/aead_cipher.dart`: Contract for AES-256-GCM authenticated encryption with fail-closed semantics.
@@ -66,19 +71,19 @@ All domain contracts and policies have been verified with a 35-test unit test su
 2. **KDF Profile Finalization:**
    - The candidate profile ($m=64\text{ MiB}$, $t=3$, $p=4$) remains a benchmark candidate pending physical execution on the Android 8.0.0 device.
 3. **Recovery Derivation Implementation:**
-   - Two-stage HKDF Extract-and-Expand derivation is fully specified; concrete execution will be implemented and tested against KAT vectors upon library addition.
+   - Two-stage HKDF Extract-and-Expand derivation is fully specified; concrete execution will be implemented and tested against KAT vectors in Milestone 1B.
 4. **Per-Record Key Derivation Implementation:**
-   - Two-stage HKDF-Extract-and-Expand per record specified; concrete execution implemented in Phase 1B.
+   - Two-stage HKDF Extract-and-Expand per record specified; concrete execution implemented in Milestone 1B.
 
 ---
 
 ## 4. Decisions Requiring Project Owner Approval
 
-Before proceeding to Phase 1B (Concrete Cryptographic Implementation):
+Before proceeding to Milestone 1B (Concrete Cryptographic Implementation):
 1. **Approve Remediated Cryptographic Design Proposal** (`10-phase-1-cryptographic-design.md`).
-2. **Approve Library Selection:** Confirm authorization to add `cryptography: ^2.7.0` and `bip39: ^1.0.6` to `pubspec.yaml`.
+2. **Approve Library Selection:** Confirm authorization to add `cryptography: ^2.9.0` and `bip39: ^1.0.6` to `pubspec.yaml`.
 3. **Approve Benchmark Plan:** Confirm benchmarking procedure on the Android 8 (API 26) physical phone before freezing final production KDF parameters.
-4. **Approve AAD Binary Specification:** Confirm canonical binary layout specified in Section 6 of Document 10.
+4. **Approve AAD Binary Specification:** Confirm canonical binary layout and purpose codes specified in Section 6 of Document 10.
 
 ---
 

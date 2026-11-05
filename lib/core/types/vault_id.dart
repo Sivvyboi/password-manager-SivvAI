@@ -2,15 +2,15 @@ import 'package:flutter/foundation.dart';
 
 /// Strongly typed, immutable identifier for a logical vault.
 ///
-/// Encapsulates a valid UUID v4 string representation to prevent
-/// raw string confusion in domain and cryptographic contexts.
+/// Encapsulates a valid canonical UUID string (RFC 4122, 8-4-4-4-12 lowercase hex)
+/// to prevent raw string confusion in domain and cryptographic contexts.
 @immutable
 class VaultId {
   final String value;
 
   const VaultId._(this.value);
 
-  /// Validates and constructs a [VaultId] from a valid UUID string.
+  /// Validates and constructs a [VaultId] from a valid canonical UUID string.
   /// Throws [ArgumentError] if the format is invalid.
   factory VaultId.fromString(String raw) {
     final trimmed = raw.trim().toLowerCase();
@@ -42,4 +42,3 @@ class VaultId {
   @override
   String toString() => value;
 }
-

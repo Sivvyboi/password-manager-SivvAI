@@ -1,6 +1,6 @@
 # 11 — Phase 1 Test Vectors and Test Plan
 
-**Document Status:** ACTIVE BASELINE & SPECIFICATION (CORRECTED)  
+**Document Status:** ACTIVE BASELINE & SPECIFICATION (REVISED & VERIFIED)  
 **Scope:** Authoritative Cryptographic Known-Answer Tests (KAT), Test Vectors, and Cross-Platform Testing Strategy  
 
 ---
@@ -18,7 +18,7 @@
 
 ### 2.1 RFC 9106 — Argon2id v1.3 Official Test Vector
 
-- **Source:** RFC 9106 Section 5.3 ("Argon2id")
+- **Source:** RFC 9106 Section 5.3 ("Argon2id Test Vectors")
 - **Argon2 Version:** `19` (`0x13` / Version 1.3)
 - **Variant:** Argon2id
 - **Input Parameters:**
@@ -50,18 +50,18 @@
     *(12 repetitions of byte `0x04`)*
 - **Pre-hashing Digest ($H_0$, 64 bytes):**
   ```text
-  b8 81 97 91 a0 35 96 60 bb 77 09 c8 5f a4 8f 04 
-  d5 d8 2c 05 c5 f2 15 cc db 88 54 91 71 7c f7 57 
-  08 2c 28 b9 51 be 38 14 10 b5 fc 2e b7 27 40 33 
-  b9 fd c7 ae 67 2b ca ac 5d 17 90 97 a4 af 31 09
+  28 89 de 48 7e b4 2a e5 00 c0 00 7e d9 25 2f 10 
+  69 ea de c4 0d 57 65 b4 85 de 6d c2 43 7a 67 b8 
+  54 6a 2f 0a cc 1a 08 82 db 8f cf 74 71 4b 47 2e 
+  94 df 42 1a 5d a1 11 2f fa 11 43 43 70 a1 e9 97
   ```
 - **Expected Output Tag (32 bytes):**
   ```text
-  eb 06 c9 fb f2 5b f4 cb d3 c7 5f eb ad a1 96 c2 
-  4f 93 c5 c2 af d6 c7 ec 48 45 c9 ad c6 cd b7 28
+  0d 64 0d f5 8d 78 76 6c 08 c0 37 a3 4a 8b 53 c9 
+  d0 1e f0 45 2d 75 b6 5e b5 25 20 e9 6b 01 e6 59
   ```
   **Hex representation:**
-  `eb06c9fbf25bf4cbd3c75febada196c24f93c5c2afd6c7ec4845c9adc6cdb728`
+  `0d640df58d78766c08c037a34a8b53c9d01ef0452d75b65eb52520e96b01e659`
 
 > [!IMPORTANT]
 > **RFC Vector vs. Application Production Profile:**  
@@ -72,7 +72,7 @@
 > - Parallelism: $4$
 > - Secret ($K$): empty
 > - Associated Data ($X$): empty
-> - Password: User master password ($\ge 15$ chars)
+> - Password: User master password ($\ge 15$ Unicode code points)
 > - Salt: 16-byte random salt generated via OS CSPRNG.
 
 ---
@@ -158,13 +158,15 @@
   408b285c123836004f4b8842c89324c1f01382450c0d839f9b2a0a36db8840dad611a4959133717f7dd9ead7a3ddc77b1fb7bb82a01f6950bea5b5d74a96f2e8
   ```
 
-#### Vector 2 (Non-zero entropy with Unicode accents):
+#### Vector 2 (Non-zero entropy):
 - **Entropy (256 bits):**
   `7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f`
 - **Mnemonic Sentence (24 words):**
   ```text
   legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title
   ```
+- **NFKD Normalized Salt:** `"mnemonic"`
+- **PBKDF2-HMAC-SHA512 Iterations:** `2048`
 - **Output Seed (64 bytes / 512 bits):**
   ```text
   bc09fac993d30364b84126938a9e403fa8a36fa1f2aa664402b1309f0a202d601a41f8a846c245c11f71df4cc38827471249fa69be862ef2a9126d4001d8c11e
@@ -199,16 +201,14 @@ To prevent confusion between generic HKDF and the application's recovery-key der
 | Test Suite | File Location | Key Assertions | Status |
 |---|---|---|---|
 | Result & Error Flow | `test/core/result_test.dart` | Ok/Err mapping, unwrap bounds, error encapsulation | Passed (2 tests) |
-| Strongly Typed IDs & Versions | `test/core/types_test.dart` | UUID v4 validation, canonical formatting, version comparison | Passed (5 tests) |
-| Master Password Policy | `test/domain/master_password_policy_test.dart` | >= 15 chars enforced, spaces permitted, no trim/lower alteration | Passed (6 tests) |
+| Strongly Typed IDs & Versions | `test/core/types_test.dart` | Canonical UUID validation, formatting, version comparison | Passed (5 tests) |
+| Master Password Policy | `test/domain/master_password_policy_test.dart` | >= 15 Unicode code points enforced, spaces permitted, no trim/lower alteration, emoji code points tested | Passed (7 tests) |
 | Password Generator Policy | `test/domain/password_generation_policy_test.dart` | >= 12 chars enforced, character group inclusion, empty set failure | Passed (4 tests) |
 | Credential & Association Models | `test/domain/credential_payload_test.dart` | CVV/CVC omitted, Android cert SHA256 validation, secret redaction | Passed (6 tests) |
 | KDF Resource Bounds | `test/crypto/kdf_parameters_test.dart` | Safe memory/iteration limits enforced, DoS header attacks rejected | Passed (5 tests) |
-| Canonical AAD Encoding | `test/crypto/associated_data_context_test.dart` | Deterministic binary layout, big-endian byte-for-byte reproducibility | Passed (3 tests) |
-| Secret Key Hygiene & Destruction | `test/crypto/key_types_test.dart` | 32-byte length check, `[REDACTED]` stringification, memory zeroize | Passed (3 tests) |
+| Canonical AAD Encoding | `test/crypto/associated_data_context_test.dart` | Deterministic binary layout, uint32 range check, all purpose codes (0x01, 0x02, 0x04, 0x05, 0x06) tested | Passed (5 tests) |
+| Secret Key Hygiene & Destruction | `test/crypto/key_types_test.dart` | 32-byte length check, `[REDACTED]` stringification, best-effort zeroize | Passed (3 tests) |
 | Widget Starter Baseline | `test/widget_test.dart` | Baseline smoke test preserved | Passed (1 test) |
-
-**Total Phase 1A Test Baseline:** 35 passing tests. Zero failures. Zero analyzer issues.
 
 ---
 
