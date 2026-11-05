@@ -33,21 +33,26 @@
 | ADR-027 | Local zxcvbn strength estimation | Approved |
 | ADR-028 | Security settings are local/device-specific | Approved |
 | ADR-029 | Android test devices: API 26 and API 34 plus emulator | Confirmed |
+| ADR-030 | Master password UTF-8 preservation; no silent trim or lowercasing | Proposed (Doc 10) |
+| ADR-031 | Canonical AAD binary encoding layout (`PMAA` header + big-endian fields) | Proposed (Doc 10) |
+| ADR-032 | Primary crypto library candidate: `cryptography` package; `bip39` for mnemonic | Candidate (Doc 10) |
+| ADR-033 | Per-record key derivation via HKDF-SHA256 to eliminate AES-GCM nonce reuse risks | Proposed (Doc 10) |
+| ADR-034 | Standard BIP39 Seed (PBKDF2) + HKDF-SHA256 recovery derivation | Proposed (Doc 10) |
 
 ## 2. Candidate technical choices — not yet frozen
 
-- SQLite implementation/package.
-- Argon2id library and exact parameters.
-- AES-256-GCM library and record-key derivation design.
-- Nonce generation, uniqueness budget and key rotation policy.
-- HKDF hierarchy and exact context strings.
-- Recovery mnemonic-to-key derivation.
-- Canonical serialization and associated-data byte encoding.
-- zxcvbn package and wordlist licensing/maintenance.
-- Windows key wrapper implementation.
-- Android 8/9 clipboard opt-in UX.
-- Exact website association verification and URL canonicalization.
-- KDF performance targets.
+- SQLite implementation/package (Evaluation in Phase 2).
+- Argon2id library (`cryptography` recommended) and parameters ($m=64\text{ MiB}, t=3, p=4$ pending physical API 26 benchmark).
+- AES-256-GCM library (`cryptography` package candidate) and per-record key derivation design (Proposed in ADR-033).
+- Nonce generation: OS CSPRNG 96-bit random nonce combined with per-record key derivation (Proposed in Doc 10).
+- HKDF hierarchy and exact context strings (`PM-RECORD-KEY-V1`, `PM-RECOVERY-WRAP-V1`, etc. proposed in Doc 10).
+- Recovery mnemonic-to-key derivation (BIP39 seed + HKDF-SHA256 proposed in Doc 10).
+- Canonical serialization and associated-data byte encoding (Specified in Doc 10; unit tested).
+- zxcvbn package and wordlist licensing/maintenance (Evaluation in Phase 3).
+- Windows key wrapper implementation (Phase 5).
+- Android 8/9 clipboard opt-in UX (Phase 5).
+- Exact website association verification and URL canonicalization (Specified in Doc 10).
+- KDF performance targets (To be established via Android 8 benchmark plan).
 
 ## 3. Open security and product decisions
 
