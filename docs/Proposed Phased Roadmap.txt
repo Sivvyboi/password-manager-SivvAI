@@ -1,0 +1,28 @@
+### **Proposed Phased Roadmap (For Your Approval)**
+
+To strictly follow the lifecycle and implementation handoff rules:
+
+- **Phase 1: Domain & Cryptographic Foundations**     &#x20;
+  - Pure Dart data structures, policies (master password >= 15 chars, password rules, etc.).
+  - Cryptographic engine (Argon2id, AES-256-GCM with AAD, CSPRNG, Fisher-Yates, BIP39 mnemonic recovery).
+  - Automated cryptographic unit test suite with known-answer test vectors.
+- **Phase 2: Data Persistence & Storage**     &#x20;
+  - SQLite schema (`vault_header`, `vault_records` with encrypted payloads and tombstones).
+  - Atomic transactional vault creation, unlock, and record CRUD.
+  - Unit tests validating tampering detection (corrupted ciphertext/tag/AAD must fail closed).
+- **Phase 3: Generator & Security Health Engine**     &#x20;
+  - Configurable password/passphrase generation.
+  - Local offline `zxcvbn` strength estimation.
+  - In-memory password reuse and age analysis.
+- **Phase 4: Flutter Presentation & UX Shell**     &#x20;
+  - Screens: Vault, Credential Editor (Login, Note, Card without CVV, Wi-Fi, Licence), Generator, Security, Settings.
+  - Auto-lock on app backgrounding and screen locking.
+- **Phase 5: Platform Integrations & Security Hardening**     &#x20;
+  - Kotlin platform channels: Android Keystore wrapper, Biometrics, Notification scheduling, Clipboard handling (API 26 vs 34).
+  - Memory hygiene, zero logging of secrets, root/tamper checks.
+- **Phase 6: Android Autofill Integration**     &#x20;
+  - Native Kotlin `AutofillService` implementation with strict package & certificate verification.
+  - Short-lived single-credential release flow.
+- **Phase 7: Backup, Restore & Portable Vault Verification**     &#x20;
+  - Authenticated backup packaging, export, and atomic restore.
+  - Cross-device and cross-platform simulation tests.
