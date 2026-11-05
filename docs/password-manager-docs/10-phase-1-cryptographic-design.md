@@ -1,6 +1,6 @@
 # 10 — Phase 1 Cryptographic Design Proposal
 
-**Document Status:** PROPOSAL / CANDIDATE FOR REVIEW (REMEDIATED & COMPREHENSIVE)  
+**Document Status:** ACTIVE BASELINE (APPROVED BY OWNER & IMPLEMENTED IN MILESTONE 1B)  
 **Scope:** Phase 1 — Cryptographic Architecture, Key Hierarchy, Primitives, Library Evaluation & Benchmark Plan  
 **Target Environments:** Android (API 26 minimum, API 34 modern) and Windows Desktop  
 
@@ -156,7 +156,7 @@ Under standard AES-GCM, reusing a nonce with the same key compromises both confi
      6. This entire operation is written to a temporary staging SQLite database.
      7. Only after full verification of all AEAD tags is the temporary database atomically swapped with the live vault database.
      8. If interrupted at any point prior to the swap, the staging file is discarded, leaving the existing vault intact.
-     Because the restored vault operates under a completely fresh VEK, cross-timeline nonce collisions are mathematically impossible.
+     Because the restored vault operates under a completely fresh VEK, independent cryptographically secure random key generation makes the probability of cross-timeline key/nonce collisions negligible, not mathematically zero.
 
 ---
 
@@ -247,10 +247,12 @@ The application derives the 256-bit **Recovery Wrapping Key (RWK)** via a comple
 | **`pointycastle`** | `^3.9.1` | AES-GCM, Argon2, HKDF | Pure Dart. Compatible with all platforms including API 26 and Windows. | Active community fork of Bouncy Castle. MIT license. | **Viable Alternative.** Slower execution for Argon2 in pure Dart. |
 | **`crypto`** (dart.dev official) | `^3.0.6` | SHA-256, HMAC | All Dart platforms. | Maintained by Google/Dart team. BSD-3-Clause. | Standard HMAC-SHA256 only; lacks AES-GCM and Argon2id. |
 
-### 8.1 Critical Architecture Note: Argon2id Off-Thread Execution
+### 8.1 Critical Architecture Note: Argon2id Execution & Package Isolate Behavior
 - Neither `cryptography` nor `cryptography_flutter` provides native C/assembly acceleration for Argon2id. It runs via `DartArgon2id`.
-- **UI Thread Freezing Prevention:** Argon2id with 64 MiB memory and 3 iterations will block the execution thread for hundreds of milliseconds or several seconds on mobile hardware.
-- **Isolate Mandate:** Argon2id **must be dispatched to a background Dart worker isolate** (`Isolate.run(...)`). This ensures the Flutter UI frame rendering is completely unaffected during vault unlock.
+- **UI Thread Freezing Prevention & Package Execution Verification:**
+  - Code analysis of `cryptography` reveals that `DartArgon2StateImplFfi` automatically computes segment slices across dedicated worker isolates using FFI shared memory (`_allocator = calloc`).
+  - For the candidate profile ($m=65536\text{ KiB}, p=4$), the package calculates `isolateCount = min(parallelism, maxIsolatesGivenMemory) = 4` and coordinates segment calculation asynchronously across 4 background worker isolates via `Isolate.spawn` and `ReceivePort`/`SendPort`.
+  - **No Redundant Double-Isolation:** Wrapping `Argon2id.deriveKey` in an additional outer `Isolate.run` is unnecessary and introduces memory copying overhead. The package already executes expensive block hashing off the calling isolate's event loop.
 - **Hardware Disparity:** Pure Dart Argon2id performance on Android 8 (API 26 32-bit ARM cores) will be significantly slower than on a Windows 64-bit desktop CPU. The benchmark plan on the physical Android 8 device is essential before freezing production parameters.
 
 ---

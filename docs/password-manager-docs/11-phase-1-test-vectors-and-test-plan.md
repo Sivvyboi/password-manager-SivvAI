@@ -1,6 +1,6 @@
 # 11 — Phase 1 Test Vectors and Test Plan
 
-**Document Status:** ACTIVE BASELINE & SPECIFICATION (REVISED, VERIFIED & FINAL-ALIGNED)  
+**Document Status:** ACTIVE BASELINE (APPROVED BY OWNER & VERIFIED IN MILESTONE 1B)  
 **Scope:** Authoritative Cryptographic Known-Answer Tests (KAT), Test Vectors, and Cross-Platform Testing Strategy  
 
 ---
@@ -79,7 +79,7 @@
 
 ### 2.2 NIST SP 800-38D — AES-256-GCM Test Vector
 
-- **Source:** NIST Cryptographic Algorithm Validation Program (CAVP) — AES GCM Test Vector (KeyLen = 256, IVLen = 96, TagLen = 128)
+- **Source:** NIST Cryptographic Algorithm Validation Program (CAVP) — AES GCM Test Vector (KeyLen = 256, IVLen = 96, TagLen = 128, Test Case 16)
 - **Inputs:**
   - Key (32 bytes):
     ```text
@@ -89,18 +89,18 @@
     ```text
     cafebabefacedbaddecaf888
     ```
-  - Plaintext (64 bytes):
+  - Plaintext (60 bytes):
     ```text
-    d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255
+    d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39
     ```
   - Associated Data (AAD, 20 bytes):
     ```text
     feedfacedeadbeeffeedfacedeadbeefabaddad2
     ```
 - **Expected Outputs:**
-  - Ciphertext (64 bytes):
+  - Ciphertext (60 bytes):
     ```text
-    522dc1f09952541f483a97fa4e56427da595f64b0c5e8eda942f7169dbff925b4104d440d70f8b5773199d31f4a5482385dd66ddb11da36a9ec71a04481577c6
+    522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662
     ```
   - Authentication Tag (16 bytes / 128 bits):
     ```text
@@ -129,7 +129,7 @@
   - Output Length ($L$): `42` bytes
 - **Step 1: HKDF-Extract Output (PRK, 32 bytes):**
   ```text
-  077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e0
+  077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5
   ```
 - **Step 2: HKDF-Expand Output (OKM, 42 bytes):**
   ```text
@@ -153,10 +153,11 @@
   ```
 - **NFKD Normalized Salt:** `"mnemonic"` (`0x6d6e656d6f6e6963`)
 - **PBKDF2-HMAC-SHA512 Iterations:** `2048`
-- **Output Seed (64 bytes / 512 bits):**
+- **Output Seed with Empty Passphrase (application standard, 64 bytes / 512 bits):**
   ```text
-  408b285c123836004f4b8842c89324c1f01382450c0d839f9b2a0a36db8840dad611a4959133717f7dd9ead7a3ddc77b1fb7bb82a01f6950bea5b5d74a96f2e8
+  408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf705489c6fc77dbd4e3dc1dd8cc6bc9f043db8ada1e243c4a0eafb290d399480840
   ```
+- *(Note: With optional reference passphrase `"TREZOR"`, the output seed is `bda85446c68413707090a52022edd26a1c9462295029f2e60cd7c4f2bbd3097170af7a4d73245cafa9c3cca8d561a7c3de6f5d4a10be8ed2a5e608d68f92fcc8`)*
 
 #### Vector 2 (Non-zero entropy):
 - **Entropy (256 bits):**
@@ -167,10 +168,11 @@
   ```
 - **NFKD Normalized Salt:** `"mnemonic"`
 - **PBKDF2-HMAC-SHA512 Iterations:** `2048`
-- **Output Seed (64 bytes / 512 bits):**
+- **Output Seed with Empty Passphrase (application standard, 64 bytes / 512 bits):**
   ```text
-  bc09fac993d30364b84126938a9e403fa8a36fa1f2aa664402b1309f0a202d601a41f8a846c245c11f71df4cc38827471249fa69be862ef2a9126d4001d8c11e
+  761914478ebf6fe16185749372e91549361af22b386de46322cf8b1ba7e92e80c4af05196f742be1e63aab603899842ddadf4e7248d8e43870a4b6ff9bf16324
   ```
+- *(Note: With optional reference passphrase `"TREZOR"`, the output seed is `bc09fac993d30364b84126938a9e403fa8a36fa1f2aa664402b1309f0a202d601a41f8a846c245c11f71df4cc38827471249fa69be862ef2a9126d4001d8c11e`)*
 
 ---
 
@@ -206,10 +208,16 @@ To prevent confusion between generic HKDF and the application's recovery-key der
 | Password Generator Policy | `test/domain/password_generation_policy_test.dart` | >= 12 chars enforced, character group inclusion, empty set failure | Passed (4 tests) |
 | Credential & Association Models | `test/domain/credential_payload_test.dart` | CVV/CVC omitted, Android cert SHA256 validation, secret redaction | Passed (6 tests) |
 | KDF Resource Bounds | `test/crypto/kdf_parameters_test.dart` | Safe memory/iteration limits enforced, DoS header attacks rejected | Passed (5 tests) |
-| Canonical AAD Encoding & Validation | `test/crypto/associated_data_context_test.dart` | Deterministic binary layout, uint16 format-version range check, uint32 record-version check, all purpose codes (0x01–0x06) tested; vault-level purposes reject `recordId`; record-level purposes require `recordId`; `HkdfContext.recordKeyInfo` validates epoch | Passed (8 tests) |
+| Canonical AAD Encoding & Validation | `test/crypto/associated_data_context_test.dart` | Deterministic binary layout, uint16 format-version range check, uint32 record-version check, all purpose codes (0x01–0x06) tested | Passed (8 tests) |
 | Secret Key Hygiene & Destruction | `test/crypto/key_types_test.dart` | 32-byte length check, `[REDACTED]` stringification, best-effort zeroize | Passed (3 tests) |
+| Secure Random Source | `test/crypto/secure_random_source_test.dart` | Arbitrary byte lengths, rejection sampling unbiased bounds, deterministic test injection | Passed (6 tests) |
+| Argon2id Key Derivation | `test/crypto/argon2id_kdf_test.dart` | RFC 9106 Section 5.3 KAT with secret/AD, parameter rejection, candidate profile performance benchmark | Passed (3 tests) |
+| AES-256-GCM AEAD Cipher | `test/crypto/aes_gcm_cipher_test.dart` | NIST SP 800-38D Test Case 16 KAT, incorrect key rejection, tampered ciphertext/tag/nonce/AAD fail-closed, canonical AAD roundtrip | Passed (8 tests) |
+| HKDF-SHA256 Derivation | `test/crypto/hkdf_test.dart` | RFC 5869 Test Case 1 KAT, per-record domain separation with epoch, recovery key derivation, input validation | Passed (5 tests) |
+| BIP-0039 Recovery Service | `test/crypto/bip39_recovery_mnemonic_test.dart` | BIP39 Vectors 1 & 2 KAT (empty passphrase), 24-word count enforcement, checksum failure rejection, vault-bound RWK derivation | Passed (5 tests) |
+| Password Generation Primitives | `test/crypto/password_generator_primitives_test.dart` | Unbiased Fisher-Yates shuffle, charset requirement satisfaction, passphrase word count & separator, deterministic reproducibility | Passed (5 tests) |
 | Widget Starter Baseline | `test/widget_test.dart` | Baseline smoke test preserved | Passed (1 test) |
-| **Total** | | | **41 tests — all passed** |
+| **Total** | | | **73 tests — all passed** |
 
 ---
 
