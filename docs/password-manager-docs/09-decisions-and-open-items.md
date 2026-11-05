@@ -37,7 +37,7 @@
 | ADR-031 | Canonical AAD binary encoding layout (`PMAA` header + big-endian fields) | Proposed (Doc 10) |
 | ADR-032 | Primary crypto library candidate: `cryptography` package; `bip39` for mnemonic | Candidate (Doc 10) |
 | ADR-033 | Per-record key derivation via HKDF-SHA256 to eliminate AES-GCM nonce reuse risks | Proposed (Doc 10) |
-| ADR-034 | Standard BIP39 Seed (PBKDF2) + HKDF-SHA256 recovery derivation | Proposed (Doc 10) |
+| ADR-034 | BIP39 Seed (PBKDF2-HMAC-SHA512, c=2048, salt='mnemonic') + two-stage HKDF-SHA256 Extract-and-Expand recovery derivation bound to Vault ID | Proposed (Doc 10) |
 
 ## 2. Candidate technical choices — not yet frozen
 

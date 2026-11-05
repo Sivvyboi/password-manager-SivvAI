@@ -1,17 +1,22 @@
 # 12 — Phase 1 Implementation Status
 
-**Document Status:** MILESTONE 1A COMPLETION REPORT  
+**Document Status:** MILESTONE 1A REMEDIATION PASS REPORT  
 **Timestamp:** 2026-11-05  
 **Current Phase:** Phase 1 — Domain and Cryptographic Foundations  
-**Milestone:** 1A — Cryptographic Design and Domain Foundation  
+**Milestone:** 1A — Cryptographic Design and Domain Foundation (Remediated)  
 
 ---
 
-## 1. Summary of Milestone 1A Achievements
+## 1. Summary of Milestone 1A Achievements & Remediation
 
 Milestone 1A established the complete, immutable domain model, typed identifiers, domain policies, and formal cryptographic interfaces for the password manager without prematurely freezing unverified cryptographic choices or writing insecure placeholder implementations.
 
-All domain contracts and policies have been implemented in pure Dart and verified with a 35-test unit test suite passing with zero warnings or analyzer lints.
+During the owner review and remediation pass:
+1. **Argon2id KAT Corrected:** Replaced the previous vector with the exact official RFC 9106 Section 5.3 compliance test vector, verifying every byte ($P$, $S$, $K$, $X$, $H_0$, and output tag), while clearly separating it from the proposed production candidate profile.
+2. **BIP39 & HKDF Recovery Derivation Formalized:** Detailed the full BIP39 process (256-bit entropy, 8-bit checksum, NFKD normalization, 2048 PBKDF2 iterations, salt `"mnemonic"`, and confirmation of no optional passphrase). Formalized the two-stage HKDF Extract-and-Expand pipeline (HMAC-SHA256) with domain separation (`PM-RECOVERY-WRAP-V1:`) and vault-specific binding (`vaultId.value`).
+3. **Refined Cryptographic Interfaces:** Updated `HkdfService` to expose explicit `extract` and `expand` stages, and updated `RecoveryMnemonicService` to require `vaultId` binding.
+
+All domain contracts and policies have been verified with a 35-test unit test suite passing with zero warnings or analyzer lints.
 
 ---
 
@@ -43,8 +48,8 @@ All domain contracts and policies have been implemented in pure Dart and verifie
 - `interfaces/secure_random_source.dart`: Contract for OS-backed CSPRNG with rejection sampling.
 - `interfaces/kdf_service.dart`: Asynchronous contract for off-thread Argon2id key derivation.
 - `interfaces/aead_cipher.dart`: Contract for AES-256-GCM authenticated encryption with fail-closed semantics.
-- `interfaces/hkdf_service.dart`: Contract for RFC 5869 purpose-separated key derivation.
-- `interfaces/recovery_mnemonic_service.dart`: Contract for BIP-0039 24-word recovery derivation.
+- `interfaces/hkdf_service.dart`: Contract for RFC 5869 complete two-stage Extract-and-Expand purpose-separated key derivation.
+- `interfaces/recovery_mnemonic_service.dart`: Contract for BIP-0039 24-word recovery derivation with vault-specific binding.
 - `interfaces/password_generator_primitives.dart`: Contract for unbiased integer sampling and Fisher-Yates shuffling.
 
 ### 2.4 Security Models (`lib/security/`)
@@ -60,20 +65,20 @@ All domain contracts and policies have been implemented in pure Dart and verifie
    - No cryptographic dependency has been added to `pubspec.yaml` pending project owner approval.
 2. **KDF Profile Finalization:**
    - The candidate profile ($m=64\text{ MiB}$, $t=3$, $p=4$) remains a benchmark candidate pending physical execution on the Android 8.0.0 device.
-3. **Recovery Derivation Vector Freezing:**
-   - Standard BIP39 seed + HKDF-SHA256 derivation is proposed; exact test vectors and library integration await Phase 1B approval.
-4. **Per-Record Key Derivation:**
-   - Proposed and specified; awaiting approval before concrete implementation.
+3. **Recovery Derivation Implementation:**
+   - Two-stage HKDF Extract-and-Expand derivation is fully specified; concrete execution will be implemented and tested against KAT vectors upon library addition.
+4. **Per-Record Key Derivation Implementation:**
+   - Two-stage HKDF-Extract-and-Expand per record specified; concrete execution implemented in Phase 1B.
 
 ---
 
 ## 4. Decisions Requiring Project Owner Approval
 
 Before proceeding to Phase 1B (Concrete Cryptographic Implementation):
-1. **Approve Cryptographic Design Proposal** (`10-phase-1-cryptographic-design.md`).
+1. **Approve Remediated Cryptographic Design Proposal** (`10-phase-1-cryptographic-design.md`).
 2. **Approve Library Selection:** Confirm authorization to add `cryptography: ^2.7.0` and `bip39: ^1.0.6` to `pubspec.yaml`.
 3. **Approve Benchmark Plan:** Confirm benchmarking procedure on the Android 8 (API 26) physical phone before freezing final production KDF parameters.
-4. **Approve AAD Binary Specification:** Confirm canonical binary layout specified in Section 6 of `10-phase-1-cryptographic-design.md`.
+4. **Approve AAD Binary Specification:** Confirm canonical binary layout specified in Section 6 of Document 10.
 
 ---
 
@@ -87,4 +92,3 @@ The following have been verified as **strictly absent** from the repository:
 - No UI components or screens (deferred to Phase 4).
 - No telemetry, analytics, or network permissions.
 - No modifications to Flutter platform scaffolding.
-
