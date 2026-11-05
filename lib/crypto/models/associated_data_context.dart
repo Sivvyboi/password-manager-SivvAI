@@ -12,16 +12,17 @@ import 'crypto_scheme.dart';
 ///
 /// Binary Format Specification (Version 1):
 /// - 4 bytes: Magic ASCII header `PMAA` (0x50, 0x4D, 0x41, 0x41)
-/// - 2 bytes: Format Version (uint16 big-endian)
+/// - 2 bytes: Format Version (uint16 big-endian, 1 to 65535)
 /// - 1 byte: Purpose Code (uint8, from [AeadPurpose])
-/// - 1 byte: Vault ID Length (uint8)
+/// - 1 byte: Vault ID Length (uint8, 36 bytes for canonical UUID)
 /// - N bytes: Vault ID UTF-8 bytes
-/// - 1 byte: Record ID Length (uint8, 0 if null/vault-level)
+/// - 1 byte: Record ID Length (uint8, 36 if present, 0 if vault-level)
 /// - M bytes: Record ID UTF-8 bytes (if present)
 /// - 4 bytes: Record Version / Revision counter (uint32 big-endian, 0 if vault-level)
 @immutable
 class AssociatedDataContext {
   static const List<int> magicHeader = [0x50, 0x4D, 0x41, 0x41]; // 'PMAA'
+  static const int maxUint16 = 0xFFFF;
   static const int maxUint32 = 0xFFFFFFFF;
 
   final FormatVersion formatVersion;
@@ -37,12 +38,49 @@ class AssociatedDataContext {
     this.recordId,
     this.recordVersion = 0,
   }) {
+    // 1. Format version range check (uint16: 1 to 65535)
+    if (formatVersion.value <= 0 || formatVersion.value > maxUint16) {
+      throw ArgumentError.value(
+        formatVersion.value,
+        'formatVersion',
+        'Format version must be an unsigned 16-bit integer between 1 and $maxUint16.',
+      );
+    }
+
+    // 2. Record version range check (uint32: 0 to 4294967295)
     if (recordVersion < 0 || recordVersion > maxUint32) {
       throw ArgumentError.value(
         recordVersion,
         'recordVersion',
         'Record version must be a valid unsigned 32-bit integer (0 to $maxUint32).',
       );
+    }
+
+    // 3. Enforce valid purpose/context combinations
+    switch (purpose) {
+      case AeadPurpose.masterKeyWrap:
+      case AeadPurpose.recoveryKeyWrap:
+      case AeadPurpose.backupPackage:
+        if (recordId != null) {
+          throw ArgumentError(
+            'Purpose ${purpose.name} is a vault-level context and must not include a recordId.',
+          );
+        }
+        if (recordVersion != 0) {
+          throw ArgumentError(
+            'Purpose ${purpose.name} is a vault-level context and must have recordVersion = 0.',
+          );
+        }
+        break;
+
+      case AeadPurpose.recordPayload:
+      case AeadPurpose.tombstonePayload:
+        if (recordId == null) {
+          throw ArgumentError(
+            'Purpose ${purpose.name} is a record-level context and requires a non-null recordId.',
+          );
+        }
+        break;
     }
   }
 
@@ -107,6 +145,9 @@ class AssociatedDataContext {
   /// Serializes the context into deterministic canonical bytes.
   /// Identical byte output is guaranteed across Android, Windows, and all Dart platforms.
   Uint8List toCanonicalBytes() {
+    if (formatVersion.value <= 0 || formatVersion.value > maxUint16) {
+      throw RangeError.range(formatVersion.value, 1, maxUint16, 'formatVersion');
+    }
     if (recordVersion < 0 || recordVersion > maxUint32) {
       throw RangeError.range(recordVersion, 0, maxUint32, 'recordVersion');
     }

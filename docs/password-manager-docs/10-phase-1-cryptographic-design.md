@@ -1,6 +1,6 @@
 # 10 — Phase 1 Cryptographic Design Proposal
 
-**Document Status:** PROPOSAL / CANDIDATE FOR REVIEW (REMEDIATED & ALIGNED)  
+**Document Status:** PROPOSAL / CANDIDATE FOR REVIEW (REMEDIATED & COMPREHENSIVE)  
 **Scope:** Phase 1 — Cryptographic Architecture, Key Hierarchy, Primitives, Library Evaluation & Benchmark Plan  
 **Target Environments:** Android (API 26 minimum, API 34 modern) and Windows Desktop  
 
@@ -11,10 +11,10 @@
 This proposal establishes the technical specification for the cryptographic foundation of the Password Manager. In accordance with project guardrails:
 1. **No Improvised Primitives:** Only vetted, standard cryptographic algorithms (Argon2id RFC 9106, AES-256-GCM NIST SP 800-38D, HKDF-SHA256 RFC 5869, and BIP-0039) are employed.
 2. **Explicit Key Separation:** No single key is ever reused across distinct operational domains or records.
-3. **Rigorous AEAD Nonce Discipline:** Nonce selection and per-record key derivation are designed to bound collision probabilities to negligible levels, with explicit rotation thresholds and rollback controls.
+3. **Rigorous AEAD Nonce Discipline:** Nonce uniqueness is maintained with per-record key isolation, explicit epoch tracking, and atomic VEK regeneration on restore to eliminate cross-timeline nonce reuse.
 4. **Canonical Context Binding:** Every ciphertext is cryptographically bound to its format version, vault identifier, record identifier, and 1-byte purpose code via unambiguous Associated Authenticated Data (AAD).
 5. **Fail-Closed Operations:** Any authentication tag mismatch or malformed header immediately aborts the operation without releasing partial plaintext or disclosing timing discrepancies.
-6. **Realistic Memory Hygiene:** Memory cleanup is designed and documented as **best-effort zeroization**, explicitly acknowledging managed runtime (Dart VM) limitations.
+6. **Realistic Memory Hygiene:** Memory cleanup is documented and implemented as **best-effort zeroization**, explicitly acknowledging managed runtime (Dart VM) limitations.
 
 ---
 
@@ -53,7 +53,7 @@ flowchart TD
     VEK & RWK -->|AES-256-GCM + AAD Purpose 0x02| RKW["recovery_key_wrapper (Vault Header)"]
 
     VEK & VSALT -->|HKDF-Extract (HMAC-SHA256)| REC_PRK["Record Master PRK (256-bit)"]
-    REC_PRK -->|HKDF-Expand info='PM-RECORD-KEY-V1:' + record_id, L=32| REK["Per-Record Encryption Key (REK, 256-bit)"]
+    REC_PRK -->|HKDF-Expand info='PM-RECORD-KEY-V1:' + record_id + ':' + key_epoch, L=32| REK["Per-Record Encryption Key (REK, 256-bit)"]
 
     REK -->|AES-256-GCM + AAD Purpose 0x04| REC_CIPHER["Encrypted Record Payload (SQLite)"]
     REK -->|AES-256-GCM + AAD Purpose 0x05| TOMB_CIPHER["Encrypted Tombstone Payload (SQLite)"]
@@ -66,10 +66,10 @@ flowchart TD
 
 | Key Identifier | Size | Purpose | Source / Derivation | Portability |
 |---|---|---|---|---|
-| **VEK** (Vault Encryption Key) | 256 bits | Primary root key protecting all records in the logical vault | OS CSPRNG at vault creation | **Portable** (encrypted inside wrappers) |
+| **VEK** (Vault Encryption Key) | 256 bits | Primary root key protecting all records in the logical vault | OS CSPRNG at vault creation or restore | **Portable** (encrypted inside wrappers) |
 | **MWK** (Master Wrapping Key) | 256 bits | Encrypts/decrypts the VEK in `master_key_wrapper` | Argon2id(MasterPassword, Salt, Params) | Derived locally as needed |
 | **RWK** (Recovery Wrapping Key) | 256 bits | Encrypts/decrypts the VEK in `recovery_key_wrapper` | BIP39 Seed $\to$ HKDF-Extract & Expand bound to Vault ID | Derived locally as needed |
-| **REK** (Record Encryption Key) | 256 bits | Encrypts/decrypts individual credential records | HKDF-SHA256(VEK, Salt, RecordID) | Ephemeral / derived per record |
+| **REK** (Record Encryption Key) | 256 bits | Encrypts/decrypts individual credential records | HKDF-SHA256(VEK, Salt, RecordID, KeyEpoch) | Ephemeral / derived per record |
 | **Device Protection Key** | Varies | Unwraps VEK via biometrics or OS credential | Android Keystore / Windows DPAPI | **Device-Local Only** (never exported) |
 
 ---
@@ -103,7 +103,7 @@ Parameters cannot be finalized based solely on desktop development. Before freez
 2. **Metrics Measured:**
    - Total derivation latency (target: $\le 1000\text{ ms}$ on API 26, $\le 500\text{ ms}$ on modern devices).
    - Peak RAM consumption during derivation (must not trigger OS low-memory kills on 2GB RAM devices).
-   - UI thread responsiveness (must confirm derivation executes off the main thread in a dedicated background Dart isolate).
+   - UI thread responsiveness (must confirm derivation executes off the main thread in a dedicated background Dart worker isolate).
 
 ---
 
@@ -118,23 +118,45 @@ Parameters cannot be finalized based solely on desktop development. Before freez
 ### 5.2 Nonce Policy & Probabilistic Collision Risk Analysis
 Under standard AES-GCM, reusing a nonce with the same key compromises both confidentiality and authenticity (allowing recovery of the GHASH authentication subkey $H$).
 
+> [!CAUTION]
+> **Fundamental Cryptographic Rule:** Changing Associated Authenticated Data (AAD) or a record revision counter does **NOT** prevent AES-GCM nonce reuse under the same key. A nonce must NEVER be reused with the same key, regardless of whether AAD differs.
+
 1. **Probabilistic Collision Analysis:**
    With a 96-bit random nonce generated via OS CSPRNG, the collision probability is governed by the Birthday Paradox:
    $$P \approx \frac{q^2}{2 \times 2^{96}} = \frac{q^2}{2^{97}}$$
    where $q$ is the number of invocations under that specific key.
    - If a single global key were used across a vault with $q = 2^{32}$ encryptions, $P \approx 2^{-33}$ (the NIST SP 800-38D limit).
-   - **Per-Record Key Derivation:** By deriving a unique Record Encryption Key ($\text{REK}$) per record, $q$ represents only the number of writes to that single record. For $q = 1,000$ writes, $P \approx \frac{10^6}{2^{97}} \approx 6.3 \times 10^{-24} \approx 2^{-77}$.
+   - **Per-Record Key Derivation:** By deriving a unique Record Encryption Key ($\text{REK}$) per record, $q$ represents only the number of writes to that single record under its current epoch. For $q = 1,000$ writes, $P \approx \frac{10^6}{2^{97}} \approx 6.3 \times 10^{-24} \approx 2^{-77}$.
    - While extremely small, this risk is **probabilistic, not mathematically zero**.
 
-2. **Per-Key Invocation Limits & Re-Keying:**
-   - A single $\text{REK}$ must not exceed $2^{16}$ ($65,536$) encryptions. If a record revision counter approaches this limit, the $\text{REK}$ is re-derived using an incremented generation context.
-   - The primary $\text{VEK}$ must be rotated if total vault write operations reach $2^{24}$.
+2. **Per-Record Key Epoch & Invocation Limits:**
+   - Each record has an integer `key_epoch` column in SQLite (default `0`).
+   - The HKDF context binds the record ID and epoch:
+     $$\text{info} = \text{utf8Encode}(\text{"PM-RECORD-KEY-V1:"} \parallel \text{recordId} \parallel \text{":"} \parallel \text{keyEpoch})$$
+   - **Threshold:** A single $\text{REK}$ must not exceed $2^{16}$ ($65,536$) encryptions. If a record's edits approach this threshold, the application increments `key_epoch = key_epoch + 1`, derives a new $\text{REK}$, and re-encrypts the record with a fresh CSPRNG nonce.
+   - **Atomic Execution:** Record updates and re-encryption are committed within an atomic SQLite transaction (`BEGIN IMMEDIATE TRANSACTION ... COMMIT`). If interrupted, the transaction rolls back cleanly.
 
-3. **Backup Restore & Rollback Handling:**
-   - **Risk:** Restoring an older backup snapshot could result in a device encrypting new record edits under the same $\text{REK}$ with nonces that were already generated on a discarded timeline.
-   - **Controls:**
-     - The canonical AAD strictly binds the `recordVersion` (monotonic revision counter).
-     - Upon restoring an older backup or resolving a sync/tombstone divergence, the application triggers a fresh key derivation or uses an incremented epoch counter in the HKDF info context, preventing nonce overlap with previous states.
+3. **Vault-Level Re-Keying ($2^{24}$ Writes):**
+   - When cumulative vault write operations reach $2^{24}$ ($16,777,216$ writes), a full vault re-keying is triggered.
+   - Generates a new 256-bit $\text{VEK}$ via OS CSPRNG.
+   - Re-derives all record keys from the new $\text{VEK}$ with `key_epoch = 0`.
+   - Re-encrypts every active record and tombstone.
+   - Re-wraps the new $\text{VEK}$ into new `master_key_wrapper` and `recovery_key_wrapper` in `vault_header`.
+   - Executed atomically in a staging database swap. If interrupted, the previous vault remains untouched.
+
+4. **Backup Restore & Rollback Protection Architecture:**
+   - **The Threat:** Restoring an older backup snapshot resets the database state. If the user subsequent edits records, the device could generate nonces under the same $\text{REK}$ and `key_epoch` that overlap with nonces already used on the previously active timeline before the restore occurred.
+   - **The Protection (Atomic VEK Rotation on Restore):**
+     To eliminate reliance on a potentially rolled-back epoch counter and guarantee zero key/nonce overlap:
+     1. When a backup is restored, the application verifies and decrypts the backup records into memory using the backup key.
+     2. It immediately generates a **brand new random 256-bit VEK** from OS CSPRNG.
+     3. It derives fresh record keys for all imported records using the new VEK with `key_epoch = 0`.
+     4. It re-encrypts all imported records with fresh CSPRNG nonces under the new VEK.
+     5. It wraps the new VEK into new `master_key_wrapper` and `recovery_key_wrapper`.
+     6. This entire operation is written to a temporary staging SQLite database.
+     7. Only after full verification of all AEAD tags is the temporary database atomically swapped with the live vault database.
+     8. If interrupted at any point prior to the swap, the staging file is discarded, leaving the existing vault intact.
+     Because the restored vault operates under a completely fresh VEK, cross-timeline nonce collisions are mathematically impossible.
 
 ---
 
@@ -147,7 +169,7 @@ To bind ciphertext immutably to its operational context, all AEAD invocations au
 | Offset | Length | Type | Description |
 |---|---|---|---|
 | 0 | 4 | Bytes | Magic ASCII identifier: `PMAA` (`0x50, 0x4D, 0x41, 0x41`) |
-| 4 | 2 | uint16 BE | Format version (`0x0001` for Version 1) |
+| 4 | 2 | uint16 BE | Format version (`0x0001` for Version 1, $1 \le v \le 65535$) |
 | 6 | 1 | uint8 | Purpose code (from AAD Purpose Table below) |
 | 7 | 1 | uint8 | Vault ID length ($L_V$, 36 for canonical UUID) |
 | 8 | $L_V$ | UTF-8 | Canonical Vault UUID string (RFC 4122) |
@@ -155,24 +177,26 @@ To bind ciphertext immutably to its operational context, all AEAD invocations au
 | $9 + L_V$ | $L_R$ | UTF-8 | Canonical Record UUID string (omitted if $L_R = 0$) |
 | $9 + L_V + L_R$ | 4 | uint32 BE | Record Version / Revision counter ($0 \le \text{version} \le \text{0xFFFFFFFF}$) |
 
-### 6.2 Complete AAD Purpose Codes Table
+### 6.2 Complete AAD Purpose Codes & Context Constraints
 
-| Code (Hex) | Enumeration Identifier | Description & Context |
-|---|---|---|
-| `0x01` | `AeadPurpose.masterKeyWrap` | Master Wrapping Key encrypting VEK in `vault_header` |
-| `0x02` | `AeadPurpose.recoveryKeyWrap` | Recovery Wrapping Key encrypting VEK in `vault_header` |
-| `0x04` | `AeadPurpose.recordPayload` | Encrypted credential payload in `vault_records` |
-| `0x05` | `AeadPurpose.tombstonePayload` | Encrypted deletion tombstone in `vault_records` |
-| `0x06` | `AeadPurpose.backupPackage` | Portable backup package container authentication |
+| Code (Hex) | Identifier | Allowed Record ID | Allowed Record Version | Context Description |
+|---|---|---|---|---|
+| `0x01` | `AeadPurpose.masterKeyWrap` | Must be `null` | Must be `0` | Master Wrapping Key encrypting VEK in `vault_header` |
+| `0x02` | `AeadPurpose.recoveryKeyWrap` | Must be `null` | Must be `0` | Recovery Wrapping Key encrypting VEK in `vault_header` |
+| `0x04` | `AeadPurpose.recordPayload` | Required (Non-null) | $0 \le v \le \text{0xFFFFFFFF}$ | Encrypted credential payload in `vault_records` |
+| `0x05` | `AeadPurpose.tombstonePayload` | Required (Non-null) | $0 \le v \le \text{0xFFFFFFFF}$ | Encrypted deletion tombstone in `vault_records` |
+| `0x06` | `AeadPurpose.backupPackage` | Must be `null` | Must be `0` | Portable backup package container authentication |
+
+*Any construction violating these combination constraints or specifying an invalid format version is rejected immediately with `ArgumentError` before encoding.*
 
 ### 6.3 Clear Distinction: AAD Purpose Codes vs. HKDF Context Labels
 
-| Purpose / Operation | AEAD Purpose Code (1 Byte) | HKDF Info String (RFC 5869 Context) |
+| Purpose / Operation | AEAD Purpose Code (1 Byte Binary) | HKDF Info String (RFC 5869 Context) |
 |---|---|---|
 | Master Key Wrapping | `0x01` in AAD header | N/A (Derived directly via Argon2id) |
 | Recovery Key Derivation | `0x02` in AAD header | `'PM-RECOVERY-WRAP-V1:' + vaultId` |
-| Record Key Derivation | `0x04` in AAD header | `'PM-RECORD-KEY-V1:' + recordId` |
-| Tombstone Payload | `0x05` in AAD header | Uses Record Key |
+| Record Key Derivation | `0x04` in AAD header | `'PM-RECORD-KEY-V1:' + recordId + ':' + keyEpoch` |
+| Tombstone Payload | `0x05` in AAD header | Uses Record Key with same epoch |
 | Portable Backup Package | `0x06` in AAD header | `'PM-BACKUP-KEY-V1:' + vaultId` |
 
 ---
@@ -215,12 +239,19 @@ The application derives the 256-bit **Recovery Wrapping Key (RWK)** via a comple
 
 ## 8. Cryptographic Library Candidates Evaluation
 
-| Package | Evaluated Version | Algorithms Covered | Platforms & API 26 | Maintenance & License | Implementation Details & Recommendation |
+| Package | Evaluated Version | Algorithms Covered | Platforms & Implementation Architecture | Maintenance & License | Implementation Details & Recommendation |
 |---|---|---|---|---|---|
-| **`cryptography`** (pedroslopez.me) | `^2.9.0` (and `cryptography_flutter: ^2.7.0`) | Argon2id v1.3, AES-256-GCM, HKDF-SHA256, CSPRNG | Android API 26+, Windows, Linux, macOS, iOS, Web. | Active, **Apache 2.0**. Verified on pub.dev. | **Recommended Primary Candidate.** Pure-Dart core package. Primitives such as Argon2id run in pure Dart (`DartArgon2id`). Flutter plugin provides optional platform acceleration for AES-GCM and SHA-256. **Must execute Argon2id in a background Dart isolate** to keep UI thread fluid. |
-| **`bip39`** | `^1.0.6` | BIP-0039 standard wordlist, entropy conversion, PBKDF2 seed derivation | Compatible with all Dart platforms. | Stable, MIT license. Wordlist verified against official standard. | **Recommended for BIP39 mnemonic handling.** |
-| **`pointycastle`** | `^3.9.1` | AES-GCM, Argon2, HKDF | Pure Dart. Compatible with all platforms including API 26 and Windows. | Active community fork of Bouncy Castle. MIT license. | **Viable Alternative.** Pure Dart; slower execution for Argon2 without native FFI acceleration. |
+| **`cryptography`** (Core Dart) | `^2.9.0` | Argon2id v1.3, AES-256-GCM, HKDF-SHA256, CSPRNG | Pure Dart. Runs across Android, Windows, Linux, macOS, Web. | Active, **Apache 2.0**. Verified on pub.dev. | **Core Crypto Engine.** Implements exact standard algorithms in pure Dart (`DartArgon2id`). Runs consistently across Android and Windows. |
+| **`cryptography_flutter`** (Flutter Plugin) | `^2.3.4` | AES-256-GCM, SHA-256, HMAC | Android, iOS, Web. | Active, **Apache 2.0**. Verified on pub.dev. | **Optional Platform Accelerator.** Accelerates AES-GCM and SHA-256 via Android OS crypto APIs. **Does NOT accelerate Argon2id.** |
+| **`bip39`** | `^1.0.6` | BIP-0039 standard wordlist, entropy conversion, PBKDF2 seed derivation | Pure Dart. Compatible with all platforms. | Stable, MIT license. Wordlist verified against official standard. | **Recommended for BIP39 mnemonic handling.** |
+| **`pointycastle`** | `^3.9.1` | AES-GCM, Argon2, HKDF | Pure Dart. Compatible with all platforms including API 26 and Windows. | Active community fork of Bouncy Castle. MIT license. | **Viable Alternative.** Slower execution for Argon2 in pure Dart. |
 | **`crypto`** (dart.dev official) | `^3.0.6` | SHA-256, HMAC | All Dart platforms. | Maintained by Google/Dart team. BSD-3-Clause. | Standard HMAC-SHA256 only; lacks AES-GCM and Argon2id. |
+
+### 8.1 Critical Architecture Note: Argon2id Off-Thread Execution
+- Neither `cryptography` nor `cryptography_flutter` provides native C/assembly acceleration for Argon2id. It runs via `DartArgon2id`.
+- **UI Thread Freezing Prevention:** Argon2id with 64 MiB memory and 3 iterations will block the execution thread for hundreds of milliseconds or several seconds on mobile hardware.
+- **Isolate Mandate:** Argon2id **must be dispatched to a background Dart worker isolate** (`Isolate.run(...)`). This ensures the Flutter UI frame rendering is completely unaffected during vault unlock.
+- **Hardware Disparity:** Pure Dart Argon2id performance on Android 8 (API 26 32-bit ARM cores) will be significantly slower than on a Windows 64-bit desktop CPU. The benchmark plan on the physical Android 8 device is essential before freezing production parameters.
 
 ---
 

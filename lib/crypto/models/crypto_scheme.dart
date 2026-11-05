@@ -65,14 +65,30 @@ enum AeadPurpose {
 /// from the 1-byte binary AEAD purpose codes.
 abstract final class HkdfContext {
   /// HKDF info prefix for deriving a per-record encryption key from VEK.
-  /// Formatted as: 'PM-RECORD-KEY-V1:' + recordId
+  /// Formatted as: 'PM-RECORD-KEY-V1:' + recordId + ':' + keyEpoch
   static const String recordKeyPrefix = 'PM-RECORD-KEY-V1:';
+
+  /// Helper to construct the canonical record key info string with versioned keyEpoch.
+  static String recordKeyInfo(String recordId, int keyEpoch) {
+    if (keyEpoch < 0) {
+      throw ArgumentError.value(keyEpoch, 'keyEpoch', 'Key epoch must be non-negative.');
+    }
+    return '$recordKeyPrefix$recordId:$keyEpoch';
+  }
 
   /// HKDF info prefix for deriving the recovery wrapping key from the BIP39 seed.
   /// Formatted as: 'PM-RECOVERY-WRAP-V1:' + vaultId
   static const String recoveryWrapPrefix = 'PM-RECOVERY-WRAP-V1:';
 
+  /// Helper to construct the canonical recovery wrap info string.
+  static String recoveryWrapInfo(String vaultId) =>
+      '$recoveryWrapPrefix$vaultId';
+
   /// HKDF info prefix for deriving a backup package encryption key.
   /// Formatted as: 'PM-BACKUP-KEY-V1:' + vaultId
   static const String backupKeyPrefix = 'PM-BACKUP-KEY-V1:';
+
+  /// Helper to construct the canonical backup key info string.
+  static String backupKeyInfo(String vaultId) =>
+      '$backupKeyPrefix$vaultId';
 }

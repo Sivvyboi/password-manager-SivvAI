@@ -38,10 +38,13 @@ abstract interface class HkdfService {
   });
 
   /// Derives a [RecordEncryptionKey] (32 bytes) from the primary [VaultEncryptionKey]
-  /// bound specifically to [recordId].
+  /// bound specifically to [recordId] and versioned [keyEpoch].
+  ///
+  /// Context format: 'PM-RECORD-KEY-V1:' + recordId + ':' + keyEpoch
   Future<Result<RecordEncryptionKey, CryptoFailure>> deriveRecordKey({
     required VaultEncryptionKey vek,
     required Uint8List salt,
     required String recordId,
+    int keyEpoch = 0,
   });
 }

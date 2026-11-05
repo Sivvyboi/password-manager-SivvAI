@@ -2,7 +2,13 @@ import 'package:flutter/foundation.dart';
 
 /// Strongly typed, immutable identifier for a vault credential record.
 ///
-/// Encapsulates a valid canonical UUID string (RFC 4122, 8-4-4-4-12 lowercase hex).
+/// Encapsulates a valid canonical UUID string in RFC 4122 textual syntax
+/// (8-4-4-4-12 lowercase hexadecimal format).
+///
+/// Note: This class validates canonical textual formatting and character set.
+/// It intentionally does not restrict or enforce specific RFC 4122 version or
+/// variant bits (such as UUID v4), ensuring full interoperability with canonical
+/// UUIDs from system generators and cross-platform test vectors.
 @immutable
 class RecordId {
   final String value;

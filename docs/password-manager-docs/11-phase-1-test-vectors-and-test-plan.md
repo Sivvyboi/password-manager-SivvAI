@@ -1,6 +1,6 @@
 # 11 — Phase 1 Test Vectors and Test Plan
 
-**Document Status:** ACTIVE BASELINE & SPECIFICATION (REVISED & VERIFIED)  
+**Document Status:** ACTIVE BASELINE & SPECIFICATION (REVISED, VERIFIED & FINAL-ALIGNED)  
 **Scope:** Authoritative Cryptographic Known-Answer Tests (KAT), Test Vectors, and Cross-Platform Testing Strategy  
 
 ---
@@ -201,14 +201,15 @@ To prevent confusion between generic HKDF and the application's recovery-key der
 | Test Suite | File Location | Key Assertions | Status |
 |---|---|---|---|
 | Result & Error Flow | `test/core/result_test.dart` | Ok/Err mapping, unwrap bounds, error encapsulation | Passed (2 tests) |
-| Strongly Typed IDs & Versions | `test/core/types_test.dart` | Canonical UUID validation, formatting, version comparison | Passed (5 tests) |
+| Strongly Typed IDs & Versions | `test/core/types_test.dart` | Canonical UUID validation, formatting, uint16 version comparison | Passed (5 tests) |
 | Master Password Policy | `test/domain/master_password_policy_test.dart` | >= 15 Unicode code points enforced, spaces permitted, no trim/lower alteration, emoji code points tested | Passed (7 tests) |
 | Password Generator Policy | `test/domain/password_generation_policy_test.dart` | >= 12 chars enforced, character group inclusion, empty set failure | Passed (4 tests) |
 | Credential & Association Models | `test/domain/credential_payload_test.dart` | CVV/CVC omitted, Android cert SHA256 validation, secret redaction | Passed (6 tests) |
 | KDF Resource Bounds | `test/crypto/kdf_parameters_test.dart` | Safe memory/iteration limits enforced, DoS header attacks rejected | Passed (5 tests) |
-| Canonical AAD Encoding | `test/crypto/associated_data_context_test.dart` | Deterministic binary layout, uint32 range check, all purpose codes (0x01, 0x02, 0x04, 0x05, 0x06) tested | Passed (5 tests) |
+| Canonical AAD Encoding & Validation | `test/crypto/associated_data_context_test.dart` | Deterministic binary layout, uint16 format-version range check, uint32 record-version check, all purpose codes (0x01–0x06) tested; vault-level purposes reject `recordId`; record-level purposes require `recordId`; `HkdfContext.recordKeyInfo` validates epoch | Passed (8 tests) |
 | Secret Key Hygiene & Destruction | `test/crypto/key_types_test.dart` | 32-byte length check, `[REDACTED]` stringification, best-effort zeroize | Passed (3 tests) |
 | Widget Starter Baseline | `test/widget_test.dart` | Baseline smoke test preserved | Passed (1 test) |
+| **Total** | | | **41 tests — all passed** |
 
 ---
 

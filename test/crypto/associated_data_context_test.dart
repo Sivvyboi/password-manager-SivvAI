@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:password_generator_and_manager/core/types/format_version.dart';
 import 'package:password_generator_and_manager/core/types/record_id.dart';
 import 'package:password_generator_and_manager/core/types/vault_id.dart';
 import 'package:password_generator_and_manager/crypto/models/associated_data_context.dart';
 import 'package:password_generator_and_manager/crypto/models/crypto_scheme.dart';
 
 void main() {
-  group('AssociatedDataContext (Canonical AAD Encoding)', () {
+  group('AssociatedDataContext (Canonical AAD Encoding & Validation)', () {
     final vaultId = VaultId.fromString('00000000-0000-0000-0000-000000000001');
     final recordId = RecordId.fromString('00000000-0000-0000-0000-000000000002');
 
@@ -73,6 +74,71 @@ void main() {
       expect(backupCtx.toCanonicalBytes()[6], equals(AeadPurpose.backupPackage.code));
     });
 
+    test('Enforces valid purpose/context combinations: vault-level vs record-level', () {
+      // Vault-level contexts must reject non-null recordId
+      expect(
+        () => AssociatedDataContext(
+          purpose: AeadPurpose.masterKeyWrap,
+          vaultId: vaultId,
+          recordId: recordId,
+          recordVersion: 0,
+        ),
+        throwsArgumentError,
+      );
+
+      expect(
+        () => AssociatedDataContext(
+          purpose: AeadPurpose.recoveryKeyWrap,
+          vaultId: vaultId,
+          recordId: recordId,
+          recordVersion: 0,
+        ),
+        throwsArgumentError,
+      );
+
+      expect(
+        () => AssociatedDataContext(
+          purpose: AeadPurpose.backupPackage,
+          vaultId: vaultId,
+          recordId: recordId,
+          recordVersion: 0,
+        ),
+        throwsArgumentError,
+      );
+
+      // Vault-level contexts must reject non-zero recordVersion
+      expect(
+        () => AssociatedDataContext(
+          purpose: AeadPurpose.masterKeyWrap,
+          vaultId: vaultId,
+          recordId: null,
+          recordVersion: 1,
+        ),
+        throwsArgumentError,
+      );
+
+      // Record-level contexts must reject null recordId
+      expect(
+        () => AssociatedDataContext(
+          purpose: AeadPurpose.recordPayload,
+          vaultId: vaultId,
+          recordId: null,
+          recordVersion: 1,
+        ),
+        throwsArgumentError,
+      );
+
+      expect(
+        () => AssociatedDataContext(
+          purpose: AeadPurpose.tombstonePayload,
+          vaultId: vaultId,
+          recordId: null,
+          recordVersion: 1,
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('Rejects record version exceeding uint32 range or negative values', () {
       expect(
         () => AssociatedDataContext(
@@ -95,6 +161,19 @@ void main() {
       );
     });
 
+    test('Rejects format version exceeding uint16 range or zero', () {
+      expect(
+        () => AssociatedDataContext(
+          formatVersion: const FormatVersion(65536),
+          purpose: AeadPurpose.recordPayload,
+          vaultId: vaultId,
+          recordId: recordId,
+          recordVersion: 1,
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('Deterministic output: multiple serializations produce identical bytes', () {
       final context1 = AssociatedDataContext.forRecordPayload(
         vaultId: vaultId,
@@ -108,6 +187,16 @@ void main() {
       );
 
       expect(context1.toCanonicalBytes(), equals(context2.toCanonicalBytes()));
+    });
+
+    test('HkdfContext constructs canonical record key info with versioned keyEpoch', () {
+      final info0 = HkdfContext.recordKeyInfo(recordId.value, 0);
+      expect(info0, equals('PM-RECORD-KEY-V1:${recordId.value}:0'));
+
+      final info5 = HkdfContext.recordKeyInfo(recordId.value, 5);
+      expect(info5, equals('PM-RECORD-KEY-V1:${recordId.value}:5'));
+
+      expect(() => HkdfContext.recordKeyInfo(recordId.value, -1), throwsArgumentError);
     });
   });
 }
